@@ -1,0 +1,129 @@
+default: 
+  tags: 
+    - ${RUNNER_TAG}
+
+include:
+  - project: 'ci/stable/compliance/iac-gates'
+    ref: 2.0.0 # make sure using the latest available version (git tag)
+    file:
+      - 'templates/iac-gates.yml'
+  - local: ci/variables.yml
+
+stages:
+  - iac-gates
+  - deploy-env
+
+#.mr-rules:
+#  rules:
+#    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_COMMIT_REF_NAME != $NEW_REPO_SETUP_BRANCH
+
+new-repo-setup:
+  stage: iac-gates
+  tags:
+    - $RUNNER_TAG
+  script:
+    - echo "New repo setup done. ${RUNNER_TAG}"
+  rules:
+    - if: $ENV == "dev"
+      variables:
+        RUNNER_TAG: "vedaas-dev-uks"
+      when: always
+    - if: $ENV == "qa"
+      variables:
+        RUNNER_TAG: "Linux_qa_runner"
+      when: always
+    - if: $ENV == "ppr"
+      variables:
+        RUNNER_TAG: "linux_stage_vedaas"
+      when: always
+
+
+tflint-gate:
+  #extends: [.tflint-gate, .mr-rules]
+  extends: [.tflint-gate]
+  tags: [LSEG]
+
+tfsec-gate:
+  #extends: [.tfsec-gate, .mr-rules]
+  extends: [.tfsec-gate]
+  tags: [LSEG]
+
+tffmt-gate: 
+  #extends: [.terraform-fmt-gate, .mr-rules]
+  extends: [.terraform-fmt-gate]
+  tags: [LSEG]
+
+kics-gate:
+  #extends: [.kics-scan-gate, .mr-rules]
+  extends: [.kics-scan-gate]
+  tags: [LSEG]
+
+checkov-gate: 
+  #extends: [.checkov-gate, .mr-rules]
+  extends: [.checkov-gate]
+  tags: [Linux, Refinitiv, Medium]
+
+semgrep-gate: 
+  #extends: [.semgrep-gate, .mr-rules]
+  extends: [.semgrep-iac-gate]
+  tags: [LSEG]
+
+secret_detection: 
+  extends: [.secret-detection-gate]
+  #extends: [.secret_detection, .mr-rules]
+  tags: [LSEG]
+
+.deploy-shared:
+ # rules:
+ #   - if: $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
+  trigger:
+    include: ci/env.yml
+    strategy: depend
+    forward:
+      pipeline_variables: true
+      yaml_variables: true
+
+# DEV
+deploy-dev:
+  stage: deploy-env
+  extends: [.deploy-shared]
+  variables:
+    ENV: dev 
+    LSEG_PPE_VAULT: "true"
+    #HashiCorpVaultKvPath: "fs_kv_secrets" #Need to modify accordingly as per the environment. This variable is required only for static secrets.
+    AZURE_ACCOUNT: "a1a-51506-dev-test-sub-vedaas-01" # Azure subscription specific to environment
+    TF_VAR_AZURE_RESOURCE_GROUP: "a1a-51506-dev-rg-vedaas-uks-01" # RG of terraform state
+    TF_VAR_AZURE_STORAGE_ACCOUNT: "a1a51506devsttfstuks25" # To store Terraform state
+    TF_VAR_TF_STATE_FILE_KEY: "${CI_PROJECT_NAME}/${CI_COMMIT_REF_NAME}.tfstate"
+    RUNNER_TAG: vedaas-dev-uks
+  when: manual
+
+# QA
+deploy-qa:
+  stage: deploy-env
+  extends: [.deploy-shared]
+  variables:
+    ENV: qa 
+    LSEG_PPE_VAULT: "true"
+    #HashiCorpVaultKvPath: "fs_kv_secrets" #Need to modify accordingly as per the environment. This variable is required only for static secrets.
+    AZURE_ACCOUNT: "a1a-51506-dev-test-sub-vedaasqa-03" # Azure subscription specific to environment
+    TF_VAR_AZURE_RESOURCE_GROUP: "a1a-51506-dev-rg-vedaasqa-uks-01" # RG of terraform state
+    TF_VAR_AZURE_STORAGE_ACCOUNT: "a1a51506devsttfstuks26" # To store Terraform state
+    TF_VAR_TF_STATE_FILE_KEY: "${CI_PROJECT_NAME}/${CI_COMMIT_REF_NAME}/${ENV}.tfstate"
+    RUNNER_TAG: Linux_qa_runner
+  when: manual
+
+# PPR
+deploy-ppr:
+  stage: deploy-env
+  extends: [.deploy-shared]
+  variables:
+    ENV: ppr 
+    LSEG_PPE_VAULT: "true"
+    #HashiCorpVaultKvPath: "fs_kv_secrets" #Need to modify accordingly as per the environment. This variable is required only for static secrets.
+    AZURE_ACCOUNT: "a1a-51506-ppr-staging-sub-vedaas-01" # Azure subscription specific to environment
+    TF_VAR_AZURE_RESOURCE_GROUP: "a1a-51506-ppr-rg-vedaas-uks-01" # RG of terraform state
+    TF_VAR_AZURE_STORAGE_ACCOUNT: "a1a51506pprsttfstuks27" # To store Terraform state
+    TF_VAR_TF_STATE_FILE_KEY: "${CI_PROJECT_NAME}/${CI_COMMIT_REF_NAME}/${ENV}.tfstate"
+    RUNNER_TAG: linux_stage_vedaas
+  when: manual
